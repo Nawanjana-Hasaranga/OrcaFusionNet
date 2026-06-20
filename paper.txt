@@ -1,0 +1,189 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage[pdftex]{graphicx}
+\usepackage[cmex10]{amsmath}
+\usepackage[caption=false,font=footnotesize]{subfig}
+\usepackage{url}
+\usepackage{float} % <--- ADDED: This guarantees strict image placement!
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+% Override IEEEtran table caption style to match figure caption layout
+\makeatletter
+\renewcommand{\@makecaption}[2]{%
+  \vskip\captionindent
+  \small
+  % This forces a normal font layout, left/justified alignment, and a colon separator
+  #1: #2\par
+}
+\makeatother
+
+% Added for clickable hyperlinks for \cite and \ref
+\usepackage[colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue]{hyperref}
+
+\raggedbottom % <--- THIS STOPS THE CRAZY PARAGRAPH STRETCHING!
+
+\begin{document}
+
+\title{OrcaFusionNet: Fusing High-Definition Spectrograms and Acoustic Metadata for Bioacoustic Click-Echo Differentiation}
+
+
+\author{\IEEEauthorblockN{
+Nawanjana Hasaranga Fonseka, Neththikumara Haththellage, Matrikelnummer: 23368627}\\
+\IEEEauthorblockA{Friedrich-Alexander-Universit\"at Erlangen-N\"urnberg\\
+Pattern Recognition Lab\\ \url{https://lme.tf.fau.de}}\\
+\IEEEauthorblockA{Martensstraße 3, 91058 Erlangen, Deutschland\\
+Email: nawanjana.hasaranga.neththikumara@fau.de}}
+\maketitle
+
+\begin{abstract}
+Manual annotation of acoustic events remains a significant bottleneck in bioacoustics and other signal analysis domains. This paper presents CLICK-SPOT, an automated two-stage deep learning pipeline designed to detect and distinguish between clicks and subsequent echoes in odontocete echolocation, using underwater recordings of killer whale vocalizations. In the first stage, the system employs a YOLO-based object detection pipeline to isolate candidate acoustic events. In the second stage, a custom Vision Transformer architecture, OrcaFusionNet, processes composite RGB images integrating high-resolution frequency Mel-spectrograms, high-temporal-resolution Mel-spectrograms, and temporal derivatives fused with a 25-feature acoustic metadata tensor. Bypassing standard interpolation blur improves the representation of short, broadband, high-frequency signals characteristic of echolocations, and the multi-modal input enhances classification performance. In evaluations using annotated underwater recordings, a multi-class threshold optimization applied to the weighted focal loss probabilities allowed the model to successfully recover 2,547 true clicks from 3,752 ground-truth events, achieving an overall weighted F1-score of 0.5697. This approach shows potential to generalize to other echolocating species, indicating broader applicability for future work in automated bioacoustic signal analysis.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Bioacoustics, Cetacean Echolocation, Deep Learning, Vision Transformer, Multi-modal Data Fusion, You Only Look Once (YOLO), Spectrogram Analysis.
+\end{IEEEkeywords}
+
+
+
+%Introduction
+\section{Introduction}
+
+Bioacoustic analysis is a crucial tool for monitoring marine ecosystems and studying the behavior of marine mammals, particularly killer whales (Orcinus orca). These animals rely heavily on echolocation, producing short, broadband, high-frequency signals to navigate, forage, and interact. However, studying these vocalizations requires processing massive volumes of continuous underwater audio recordings. As a result, the manual annotation of acoustic events remains a significant bottleneck in bioacoustics and other signal analysis domains. Detecting and distinguishing between true clicks and subsequent echoes within complex bioacoustic environments is a significant challenge. Faint, distant echolocation clicks are frequently masked by continuous background noise or overlapping wave action, creating an inherently low signal-to-noise ratio (SNR) that complicates automated analysis.
+
+Previous research explored several automated methods to address this acoustic detection problem, though significant limitations remained. Traditional automated detectors relied on static energy-over-frequency thresholds \cite{Gillespie2008_PAMGuard}, which struggled with prohibitively high false-positive rates in noisy environments. Later approaches utilized classical machine learning models, such as Random Forests \cite{Hauer2026_arXiv}, which processed basic acoustic parameters but failed to leverage the complex visual morphology of the sound wave. More recent advancements applied deep Convolutional Neural Networks (CNNs) to marine mammal call detection \cite{Bergler2019_DeepLearning, Bergler2022_AnimalSpot}. While these CNN architectures successfully isolated longer vocalizations like whistles, they lacked the fine-grained temporal resolution and rhythmic context required to definitively separate millisecond-level clicks from overlapping echoes. Most recently, YOLO-based object detection pipelines \cite{Hauer2026_arXiv, Ultralytics_YOLOv26} successfully acted as frontline scanners to rapidly isolate potential acoustic events; however, they still struggled to accurately classify these short, transient signals without discarding highly attenuated biological data.
+
+To address the shortcomings of previous models, the original CLICK-SPOT pipeline used a YOLO-based scanner followed by a standard Random Forest classifier to sort the sounds \cite{Hauer2026_arXiv}. To improve upon this, this project introduces an upgraded two-stage deep learning pipeline. Building upon the foundational YOLO-based scanning stage, this paper completely replaces the Random Forest with OrcaFusionNet, a custom multi-modal Transformer architecture engineered for the classification stage. Unlike standard flat classifiers, OrcaFusionNet simultaneously processes composite RGB images (see Fig. \ref{fig:composite}) that integrate high-resolution frequency Mel-spectrograms, high-temporal-resolution Mel-spectrograms, and temporal derivatives (see Fig. \ref{fig:channels}) alongside a heavily engineered 25-feature acoustic and rhythmic metadata tensor. Furthermore, a multi-class threshold calibration is applied to the network's weighted focal loss probabilities.
+
+The primary purpose of this project is to provide a robust, multi-modal deep learning system that maximizes the recall of highly attenuated signals, thereby eliminating the manual annotation bottleneck and providing marine biologists with a highly scalable tool for automated odontocete echolocation analysis.  
+
+%Methods
+\section{Methods}
+
+\subsection{Data Collection and Preprocessing}
+The dataset comprised underwater audio recordings containing high-frequency killer whale echolocation clicks, subsequent echoes, and general background noise, which we categorize as misclassifications (MS). To prepare the continuous audio for the first stage of the deep learning pipeline, the raw recordings were segmented using overlapping 5-ms sliding windows. Candidate acoustic events detected within these windows by the YOLO frontline scanner were then extracted as dynamically sized audio snippets based on their predicted bounding boxes. From these isolated event snippets, a 25-feature rhythmic and acoustic metadata tensor was extracted. This tensor included 20 macro-rhythm features (e.g., inter-arrival times, density, and local confidence ranks) and 5 micro-spectral features (root mean square (RMS) energy, peak amplitude, crest factor, zero-crossing rate (ZCR), and signal entropy). Furthermore, to leverage spatial feature extraction, the dynamically sized audio signals were converted into composite 3-channel RGB images. To overcome the Gabor limit and avoid interpolation blur on ultra-short transients, a multi-resolution Mel-spectrogram approach was utilized. The composite tensor integrated temporal derivatives for edge detection (red channel), a high-temporal-resolution Mel-spectrogram with an n\_fft of 256 (green channel), and a high-frequency-resolution Mel-spectrogram with an n\_fft of 2048 (blue channel). To maintain the sharp morphological integrity of the bioacoustic signals, unused spatial dimensions were zero-padded rather than stretched to fit the 224x224 input requirement.
+
+The second stage of the classification pipeline was trained on the dynamically extracted audio snippets. Because these snippets were cropped tightly around the biological signals based on the YOLO bounding boxes, their temporal lengths varied significantly, highlighting the necessity of the zero-padding approach to preserve transient morphology. Furthermore, the dataset exhibited severe class imbalance, which is typical in continuous underwater bioacoustic recordings. The extracted dataset consisted of approximately 13.3\% true clicks, 12.8\% echoes, and a vast majority of 73.9\% misclassifications (MS). To combat this heavy skew toward background noise, an 80/20 stratified shuffle split was utilized to maintain proportional representation across the training and validation sets, and explicit class weights ($\alpha = [2.5054, 2.6039, 0.4511]$) were applied to the focal loss function during network optimization.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{vit_channels_separated.png}
+\caption{Separated input channels for the Vision Transformer. To overcome the Gabor limit, different short-Time Fourier transform (STFT) window sizes are utilized. The Blue channel captures high-resolution frequency data (n\_fft=2048), the Green channel captures high-resolution temporal data (n\_fft=256), and the Red channel maps the temporal derivatives (deltas) to act as an edge-detector for sharp click transients.}
+\label{fig:channels}
+\end{figure*}
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.6\columnwidth]{vit_input_rgb.png}
+\caption{The final 224x224 RGB composite tensor fed into the Vision Transformer. Because cetacean clicks and MS noise transients are extremely short, the native high-resolution data is preserved in the upper-left quadrant. The remaining spatial dimensions are zero-padded (represented by the solid background) rather than stretched. This prevents interpolation blur and allows the ViT's attention mechanism to focus entirely on the high-variance signal data.}
+\label{fig:composite}
+\end{figure}
+
+\subsection{Two-Stage Pipeline Design}
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.80\columnwidth]{confusion_matrix.png}
+\caption{Confusion matrix detailing the final classification performance of OrcaFusionNet on the held-out test set. The model successfully isolates the majority of true biological clicks (2,547), though the optimized threshold allows for a calculated trade-off, recovering faint signals at the cost of classifying some general background noise as misclassifications (MS).}
+\label{fig:confusion_matrix}
+\end{figure}
+The system architecture consisted of a two-stage detection and classification pipeline (see Fig. \ref{fig:pipeline_full}). The first stage utilized the foundational YOLO-based detection mechanism from the CLICK-SPOT framework \cite{Hauer2026_arXiv} (see Fig. \ref{fig:stage1}). Specifically, a YOLOv26 object detection network acted as a frontline scanner, processing audio through 5-ms sliding windows with a 2.5-ms overlap \cite{Hauer2026_arXiv}. In this initial detection stage, the input windows were converted into composite RGB images distinct from those used in the second stage; the YOLO model processed images where the red channel represented the raw waveform, the green channel held the continuous wavelet transform (CWT) scalogram, and the blue channel contained the spectrogram \cite{Hauer2026_arXiv}. YOLO performed a context-free binary classification to distinguish potential acoustic events from background noise \cite{Hauer2026_arXiv}. Because rapid echolocation bursts can cause bounding boxes to overlap and merge, a First-Order Detection (FOD) peak grouping method was applied during post-processing \cite{Hauer2026_arXiv}. This FOD method calculated the first-order gradient of the signal to locate steep, Dirac-like peaks, effectively splitting merged boxes back into single, isolated events \cite{Hauer2026_arXiv}. In the original research, these candidate events were given to a Random Forest classifier \cite{Hauer2026_arXiv}. In this project, that classification step is completely replaced, and the extracted acoustic snippets are instead passed to our new OrcaFusionNet Vision Transformer for precise classification (see Fig. \ref{fig:stage2}).
+\begin{figure*}[!t]
+\centering
+% Stage 1: YOLO Frontline Scanner
+\subfloat[Stage 1: YOLO Frontline Scanner]{\includegraphics[width=0.9\textwidth]{stage1_pipeline.png.jpg}%
+\label{fig:stage1}}
+
+\vspace{0.5cm} % Adds space between the two diagrams
+
+% Stage 2: OrcaFusionNet Classification
+\subfloat[Stage 2: OrcaFusionNet Classification]{\includegraphics[width=0.9\textwidth]{stage2_pipeline.png.jpg}%
+\label{fig:stage2}}
+\caption{The two-stage CLICK-SPOT architecture. (a) Stage 1 employs a YOLOv26 detector on composite RGB inputs to isolate acoustic events. (b) Stage 2 uses OrcaFusionNet to classify these isolated snippets by fusing visual features from the Vision Transformer (ViT) with acoustic metadata via a gated attention mechanism.}
+\label{fig:pipeline_full}
+\end{figure*}
+
+\subsection{OrcaFusionNet Architecture}
+For the second classification stage, a custom multi-modal Transformer architecture named OrcaFusionNet was developed. The visual branch utilized a pre-trained Vision Transformer (ViT-B/16) \cite{Dosovitskiy2020_ViT} to process the composite RGB images. To retain generalized feature extraction while adapting to the acoustic domain, the ViT parameters were frozen except for the final encoder layer, which was fine-tuned. Concurrently, the metadata branch processed the 25-feature acoustic tensor through a Multi-Layer Perceptron (MLP). To combine these modalities, a custom gated attention lens was implemented. This layer projected the metadata features into a 768-dimensional space and applied a sigmoid activation. The resulting tensor acted as an attention mask, mathematically scaling the visual features based on the temporal and spectral context before passing the fused data to the final classification layers, which utilized a 0.5 dropout rate to prevent overfitting.
+
+\subsection{Evaluation and Optimization Setup}
+The network was trained for 80 epochs using the AdamW optimizer \cite{Loshchilov2017_AdamW} (learning rate = $1 \times 10^{-4}$) and a batch size of 8. To combat severe class imbalance, a Weighted Focal Loss function \cite{Lin2017_FocalLoss} ($\gamma = 1.5$) with explicit class weights ($\alpha = [2.5054, 2.6039, 0.4511]$ for Click, Echo, and MS, respectively) was applied. Furthermore, a grid search across the validation set was conducted to optimize the decision boundaries away from standard argmax functions. This multi-class threshold calibration established custom confidence thresholds (Click: 0.50, Echo: 0.50, MS: 0.60) to maximize the recall of faint biological signals.
+
+%Results
+\section{Results}
+The optimized OrcaFusionNet pipeline was evaluated on a held-out test set comprising 7,624 total acoustic events. In the initial stage, the YOLO detection layer maintained a baseline detection precision of 68.13\% and an F1-score of 0.6107. 
+
+In the second stage, the multi-class threshold calibration yielded a peak validation macro F1-score of 0.6377. When applied to the unseen test data, the pipeline successfully identified 2,547 true clicks out of 3,752 ground-truth clicks. While lowering the click threshold to 0.50 allowed 629 false-positive MS events into the "Click" category, it drastically increased overall signal recovery. The final classification metrics for the test evaluation are summarized in Tab.~\ref{result_table}, and the detailed class predictions are displayed in the confusion matrix (see Fig. \ref{fig:confusion_matrix}). The model demonstrated an overall weighted average F1-score of 0.5697.
+
+\begin{table}[!t]
+\caption{Classification performance of the OrcaFusionNet pipeline on the held-out test set (Support: 7,624 events). Metrics evaluate the model's ability to differentiate clicks, echoes, and misclassifications (MS) after threshold calibration.}
+\begin{center}
+\begin{tabular}{l|cccc}
+\textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} & \textbf{Support}\\
+\hline
+Click & 0.5787 & 0.6788 & 0.6248 & 3752\\
+Echo & 0.1323 & 0.2478 & 0.1725 & 904\\
+MS & 0.5970 & 0.6472 & 0.6211 & 2968\\
+\hline
+Macro Avg & 0.4360 & 0.5246 & 0.4728 & 7624\\
+Weighted Avg & 0.5329 & 0.6154 & 0.5697 & 7624\\
+\end{tabular}
+\label{result_table}
+\end{center}
+\end{table}
+
+%Discussion
+\section{Discussion}
+The results of the OrcaFusionNet pipeline highlighted a fundamental challenge in automated bioacoustics: the inherent trade-off between precision and recall. Standard classification models default to an argmax function, which maximizes overall accuracy but systematically fails in low-SNR underwater environments. Faint cetacean clicks are often heavily masked by continuous background noise, causing their probabilities to dip just below standard thresholds. By actively calibrating the decision boundaries, the pipeline prioritized recall. As observed in the results, this design choice allowed the recovery of 2,547 true clicks. In the context of marine biology, this trade-off is highly desirable; it is significantly more efficient for biologists to filter a slightly inflated pool of positive detections than to permanently lose highly attenuated, rare biological vocalizations.
+
+Furthermore, the classification stage provided valuable insights into the behavior of multi-modal Transformer architectures in bioacoustics. The original CLICK-SPOT pipeline utilized a Random Forest classifier that achieved highly accurate click-echo differentiation by relying on carefully handcrafted features \cite{Hauer2026_arXiv}. This project explored an alternative approach: utilizing OrcaFusionNet to automatically learn both the visual shape of the soundwave and the localized rhythmic context. The current iteration of OrcaFusionNet did not surpass the highly optimized Random Forest in overall F1-score. This is a common challenge, as vision transformers require significantly larger datasets to generalize effectively compared to ensemble decision trees; however, it successfully demonstrated the feasibility of this architecture. By utilizing the Gated Attention mechanism, the network proved it could dynamically scale visual features based on the 25-feature acoustic tensor, laying a strong foundation for future Transformer models as larger underwater datasets become available.
+ 
+%Discussion
+%Summary and outlook
+\section{Summary and outlook}
+This project successfully developed and optimized a robust, two-stage deep learning pipeline to detect and classify killer whale echolocation. By replacing standard classification models with OrcaFusionNet, a multi-modal Transformer that combined high-definition composite images with 25 rhythmic and acoustic features, the system's ability to differentiate between true biological signals and background noise was significantly improved. Furthermore, by using a weighted focal loss function and carefully adjusting the decision boundaries, the pipeline successfully recovered very faint biological signals that were hidden in the background noise.
+
+Future work will focus on making the model more adaptable without relying on the slow process of labeling data by hand. By using self-supervised learning, the system could analyze massive amounts of unlabelled ocean audio, allowing the network to automatically improve how it recognizes sound features. Additionally, future research could use transfer learning to adapt the OrcaFusionNet architecture to detect the clicks of other endangered whale and dolphin species. Ultimately, combining fast detection scanners with smart, multi-modal Transformers gives marine biologists a powerful and flexible tool to better understand how marine mammals communicate.
+
+
+% Conference papers do not normally have an appendix
+
+
+% use section* for acknowledgement
+\section*{Acknowledgment}
+The authors would like to thank Christopher Hauer and Dr. Heike Vester for providing the annotated data and foundational guidance for this bioacoustic research.
+
+
+\begin{thebibliography}{10}
+
+% Reference 1: Software / Weblink
+\bibitem{Gillespie2008_PAMGuard} Gillespie, D. et al.: {\sl PAMGuard: Semiautomated, open source software for real-time acoustic detection and localization of cetaceans}. Proceedings of the Institute of Acoustics 30(5) (2008)
+
+% Reference 2: Journal Article
+\bibitem{Bergler2019_DeepLearning} Bergler, C. et al.: {\sl Deep Learning for Bioacoustic Signal Classification}. Scientific Reports 9 (2019)
+
+% Reference 3: Journal Article
+\bibitem{Bergler2022_AnimalSpot} Bergler, C. et al.: {\sl ANIMAL-SPOT enables animal-independent signal detection and classification using deep learning}. Scientific Reports 12 (2022)
+
+% Reference 4: arXiv Preprint (Replaces Thesis and ICASSP)
+\bibitem{Hauer2026_arXiv} Hauer, C. et al.: {\sl CLICK-SPOT: ORCA CLICK \& ECHO DETECTION AND CLASSIFICATION USING MULTIPLE TIME-FREQUENCY DOMAIN REPRESENTATIONS}. arXiv preprint arXiv:2602.17749 (2026). URL: \url{https://arxiv.org/abs/2602.17749}
+
+% Reference 5: YOLOv26 Citation 
+\bibitem{Ultralytics_YOLOv26} Jocher, G. et al.: {\sl YOLO by Ultralytics}. URL: \url{https://docs.ultralytics.com/models/yolo26#citations-and-acknowledgments}
+
+% Reference 6: Vision Transformer (ViT)
+\bibitem{Dosovitskiy2020_ViT} Dosovitskiy, A. et al.: {\sl An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale}. arXiv preprint arXiv:2010.11929 (2020)
+
+% Reference 7: AdamW Optimizer 
+\bibitem{Loshchilov2017_AdamW} Loshchilov, I., Hutter, F.: {\sl Decoupled weight decay regularization}. arXiv preprint arXiv:1711.05101 (2017)
+
+% Reference 8: Focal Loss
+\bibitem{Lin2017_FocalLoss} Lin, T. Y. et al.: {\sl Focal loss for dense object detection}. In: Proc. of the IEEE International Conference on Computer Vision (ICCV) (2017)
+
+\end{thebibliography}
+
+
+
+
+% That's all, folks
+\end{document}
+
+
