@@ -8,8 +8,11 @@ This research was developed within the context of Autonomy Technologies at Fried
 Manual annotation of acoustic events remains a significant bottleneck in bioacoustics. This project introduces an automated two-stage deep learning pipeline designed to detect and distinguish between clicks and subsequent echoes in odontocete echolocation using underwater recordings of killer whale vocalizations.
 
 ### Two-Stage Architecture
-1. **Frontline Scanner (YOLOv26):** A YOLO-based object detection pipeline processes composite RGB images (waveform, CWT scalogram, spectrogram) via 5-ms sliding windows to rapidly isolate candidate acoustic events.
-2. **Classification (OrcaFusionNet):** A custom Vision Transformer (ViT-B/16) architecture processes composite high-resolution spectrograms fused with a 25-feature acoustic metadata tensor via a custom gated attention mechanism. 
+**1. Frontline Scanner (YOLOv26)**
+![Frontline Scanner](visuals/stage1_pipeline.png)
+
+**2. Classification (OrcaFusionNet)**
+![Classification Stage](visuals/stage2_pipeline.png)
 
 ## Performance
 Through multi-class threshold calibration applied to weighted focal loss probabilities, the model successfully recovered **2,547 true clicks from 3,752 ground-truth events**, achieving an overall weighted F1-score of **0.5697** in a heavily imbalanced, low-SNR underwater environment.
